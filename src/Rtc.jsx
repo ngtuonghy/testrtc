@@ -7,8 +7,8 @@ import {
 	getDoc,
 	setDoc,
 	updateDoc,
-	onSnapshot,
 	arrayUnion,
+	onSnapshot,
 } from "firebase/firestore";
 
 const configuration = {
@@ -24,7 +24,7 @@ const Rtc = () => {
 	const [joinId, setJoinId] = useState("");
 	const localVideo = useRef(null);
 	const remoteVideoRef = useRef(null);
-	const peerConnection = useRef(new RTCPeerConnection(configuration));
+	const peerConnection = useRef(null);
 	const localStream = useRef(null);
 
 	const startCall = async () => {
@@ -33,24 +33,26 @@ const Rtc = () => {
 			audio: true,
 		});
 		localVideo.current.srcObject = localStream.current;
-
-		localStream.current.getTracks().forEach((track) => {
-			peerConnection.current.addTrack(track, localStream.current);
-		});
 	};
 
 	const createRoom = async () => {
-		await startCall();
+		peerConnection.current = new RTCPeerConnection(configuration);
 
+		// Lấy luồng video/audio từ người tạo phòng
+		await startCall();
+		localStream.current.getTracks().forEach((track) => {
+			peerConnection.current.addTrack(track, localStream.current);
+		});
+
+		// Tạo offer và lưu vào Firestore
 		const offer = await peerConnection.current.createOffer();
 		await peerConnection.current.setLocalDescription(offer);
-
 		const roomRef = await addDoc(collection(db, "rooms"), {
 			offer: { type: offer.type, sdp: offer.sdp },
 		});
-
 		setRoomId(roomRef.id);
 
+		// Lắng nghe các ICE candidates
 		peerConnection.current.onicecandidate = async (event) => {
 			if (event.candidate) {
 				await updateDoc(roomRef, {
@@ -59,29 +61,27 @@ const Rtc = () => {
 			}
 		};
 
+		// Hiển thị video từ người tham gia khác
 		peerConnection.current.ontrack = (event) => {
 			remoteVideoRef.current.srcObject = event.streams[0];
 		};
 	};
 
-	const stopCall = () => {
-		localStream.current.getTracks().forEach((track) => track.stop());
-		peerConnection.current.close();
-		setRoomId("");
-	};
-
 	const joinRoom = async (e) => {
 		e.preventDefault();
+		peerConnection.current = new RTCPeerConnection(configuration);
+
+		await startCall();
+		localStream.current.getTracks().forEach((track) => {
+			peerConnection.current.addTrack(track, localStream.current);
+		});
+
 		const roomRef = doc(db, "rooms", joinId);
 		const roomSnapshot = await getDoc(roomRef);
-
 		if (roomSnapshot.exists()) {
 			const roomData = roomSnapshot.data();
-			const offer = roomData.offer;
-			await startCall();
-
 			await peerConnection.current.setRemoteDescription(
-				new RTCSessionDescription(offer),
+				new RTCSessionDescription(roomData.offer),
 			);
 			const answer = await peerConnection.current.createAnswer();
 			await peerConnection.current.setLocalDescription(answer);
@@ -91,12 +91,24 @@ const Rtc = () => {
 				{ answer: { type: answer.type, sdp: answer.sdp } },
 				{ merge: true },
 			);
+
+			// Nhận track từ người tạo phòng
 			peerConnection.current.ontrack = (event) => {
 				remoteVideoRef.current.srcObject = event.streams[0];
 			};
 		} else {
 			alert("Room không tồn tại!");
 		}
+	};
+
+	const stopCall = () => {
+		if (localStream.current) {
+			localStream.current.getTracks().forEach((track) => track.stop());
+		}
+		if (peerConnection.current) {
+			peerConnection.current.close();
+		}
+		setRoomId("");
 	};
 
 	return (
@@ -106,7 +118,7 @@ const Rtc = () => {
 			<button onClick={stopCall}>Stop</button>
 
 			<div style={{ display: "flex" }}>
-				<video ref={localVideo} autoPlay style={{ width: "45%" }}></video>
+				<video ref={localVideo} autoPlay muted style={{ width: "45%" }}></video>
 				<video ref={remoteVideoRef} autoPlay style={{ width: "45%" }}></video>
 			</div>
 
