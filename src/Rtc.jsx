@@ -7,6 +7,7 @@ import {
 	onSnapshot,
 	collection,
 	addDoc,
+	updateDoc,
 } from "firebase/firestore";
 
 const configuration = {
@@ -15,23 +16,23 @@ const configuration = {
 			urls: ["stun:stun1.l.google.com:19302", "stun:stun2.l.google.com:19302"],
 		},
 	],
-	iceCandidatePoolSize: 10,
+	// iceCandidatePoolSize: 10,
 };
 
 const VideoCall = () => {
 	const localVideoRef = useRef(null);
-	const remoteVideoRef = useRef(null);
+	const remoteVideoRef = useRef();
 	const peerConnection = useRef(new RTCPeerConnection(configuration));
 
 	const [callId, setCallId] = useState("");
-	const [generatedCallId, setGeneratedCallId] = useState(null); // Lưu ID phòng
+	const [generatedCallId, setGeneratedCallId] = useState(null);
 
 	useEffect(() => {
 		startLocalVideo();
 	}, []);
 
 	const generateCallId = () => {
-		const newCallId = Math.random().toString(36).substring(2, 8); // Tạo ID ngẫu nhiên 6 ký tự
+		const newCallId = Math.random().toString(36).substring(2, 8);
 		setGeneratedCallId(newCallId);
 		// setCallId(newCallId);
 		return newCallId;
@@ -52,31 +53,56 @@ const VideoCall = () => {
 		}
 	};
 
-	const setupConnection = async () => {
+	const remoteStream = useRef(new MediaStream());
+	const setupConnection = (newCallId) => {
 		peerConnection.current.onicecandidate = (event) => {
 			if (event.candidate) {
-				// Lưu ICE candidate vào tài liệu 'localCandidate' trong Firestore
-				setDoc(
-					collection(db, "calls", callId, "candidates", "localCandidate"),
-					{
-						candidate: event.candidate.toJSON(),
-					},
-				);
+				setDoc(doc(db, "calls", newCallId, "candidates", "localCandidate"), {
+					localCandidate: event.candidate.toJSON(),
+				})
+					.then(() => {
+						console.log("Candidate added successfully");
+					})
+					.catch((error) => {
+						console.error("Error adding candidate: ", error);
+					});
 			}
 		};
 
 		peerConnection.current.ontrack = (event) => {
-			remoteVideoRef.current.srcObject = event.streams[0];
+			event.streams[0].getTracks().forEach((track) => {
+				console.log("Add a track to the remoteStream:", track);
+				remoteStream.current.addTrack(track);
+				// remoteVideoRef.current.addTrack(track);
+			});
+			remoteVideoRef.current.srcObject = remoteStream.current;
 		};
 
-		// Lắng nghe ICE Candidate từ 'remoteCandidate'
+		onSnapshot(doc(db, "calls", newCallId), (snapshot) => {
+			const data = snapshot.data();
+			// console.log(data, "is running");
+			if (!peerConnection.current.currentRemoteDescription && data.answer) {
+				console.log("Set remote description: ", data.answer);
+				const answer = new RTCSessionDescription(data.answer);
+				peerConnection.current.setRemoteDescription(answer);
+			}
+
+			// if (data?.candidate) {
+			// 	peerConnection.current.addIceCandidate(
+			// 		new RTCIceCandidate(data.candidate),
+			// 	);
+			// }
+		});
+
 		onSnapshot(
-			doc(db, "calls", callId, "candidates", "remoteCandidate"),
+			doc(db, "calls", newCallId, "candidates", "remoteCandidate"),
+
 			(snapshot) => {
 				const data = snapshot.data();
-				if (data?.candidate) {
+				console.log(data, "remoteCandidate is running");
+				if (data?.remoteCandidate) {
 					peerConnection.current.addIceCandidate(
-						new RTCIceCandidate(data.candidate),
+						new RTCIceCandidate(data.remoteCandidate),
 					);
 				}
 			},
@@ -84,36 +110,60 @@ const VideoCall = () => {
 	};
 
 	const createOffer = async () => {
-		const newCallId = generateCallId(); // Tạo ID khi bắt đầu cuộc gọi
-		// await setupConnection();
+		const newCallId = generateCallId();
+		setupConnection(newCallId);
 		const offer = await peerConnection.current.createOffer();
-		console.log(offer);
-		// const docRef = await addDoc(collection(db, "users"), {
-		// 	first: "Ada",
-		// 	last: "Lovelace",
-		// 	born: 1815,
-		// });
-		// console.log("Document written with ID: ", docRef.id);
+		// console.log(offer);
 
-		// Add or update the document
 		await peerConnection.current.setLocalDescription(offer);
-		await addDoc(collection(db, "calls"), { offer });
+		await setDoc(doc(db, "calls", newCallId), {
+			offer,
+		});
+
+		// setDoc(collection(db, "calls", newCallId), { offer });
 	};
 
 	const joinCall = async () => {
 		const callDoc = await getDoc(doc(db, "calls", callId));
 		if (callDoc.exists()) {
+			peerConnection.current.onicecandidate = (event) => {
+				if (event.candidate) {
+					setDoc(doc(db, "calls", callId, "candidates", "remoteCandidate"), {
+						remoteCandidate: event.candidate.toJSON(),
+					})
+						.then(() => {
+							console.log("Candidate added successfully in joinCall");
+						})
+						.catch((error) => {
+							console.error("Error adding candidate: ", error);
+						});
+				}
+			};
+			console.log(callDoc.data());
 			const offer = callDoc.data().offer;
-			await peerConnection.current.setRemoteDescription(
-				new RTCSessionDescription(offer),
-			);
+			await peerConnection.current.setRemoteDescription(offer);
 
+			// console.log("setRemoteDescription", callId);
 			const answer = await peerConnection.current.createAnswer();
 			await peerConnection.current.setLocalDescription(answer);
-			await setDoc(doc(db, "calls", callId, "answer"), { answer });
+			await updateDoc(doc(db, "calls", callId), { answer });
+
+			onSnapshot(
+				doc(db, "calls", callId, "candidates", "localCandidate"),
+				(snapshot) => {
+					// console.log(snapshot.data());
+					const data = snapshot.data();
+					if (data?.localCandidate) {
+						console.log(data, "localCandidate is running");
+						peerConnection.current.addIceCandidate(
+							new RTCIceCandidate(data.localCandidate),
+						);
+					}
+				},
+			);
+			// setupConnection(callId);
 		}
 	};
-
 	return (
 		<div
 			style={{
@@ -134,10 +184,17 @@ const VideoCall = () => {
 			<div>
 				<button onClick={createOffer}>Create Call</button>
 				<button onClick={joinCall}>Join Call</button>
+				{/* <button onClick={connect}>Connect</button> */}
 			</div>
 			<div className="videos">
 				<video width={"45%"} ref={localVideoRef} autoPlay playsInline muted />
-				<video width={"45%"} ref={remoteVideoRef} autoPlay playsInline />
+				<video
+					width={"45%"}
+					ref={remoteVideoRef}
+					autoPlay
+					playsInline
+					src="htt"
+				/>
 			</div>
 		</div>
 	);
