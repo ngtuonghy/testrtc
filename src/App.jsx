@@ -1,11 +1,11 @@
-import { Rtc } from "./Rtc";
+import { VideoCall } from "./Rtc";
 
 import "./App.css";
 
 function App() {
 	return (
 		<>
-			<Rtc />
+			<VideoCall />
 		</>
 	);
 }
