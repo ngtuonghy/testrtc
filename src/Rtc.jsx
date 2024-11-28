@@ -29,15 +29,6 @@ const VideoCall = () => {
 
 	useEffect(() => {
 		startLocalVideo();
-		peerConnection.current.ontrack = (event) => {
-			event.streams[0].getTracks().forEach((track) => {
-				console.log("Add a track to the remoteStream:", track);
-				remoteStream.current.addTrack(track);
-				// remoteVideoRef.current.addTrack(track);
-			});
-		};
-
-		remoteVideoRef.current.srcObject = remoteStream.current;
 	}, []);
 
 	const generateCallId = () => {
@@ -57,6 +48,16 @@ const VideoCall = () => {
 			stream
 				.getTracks()
 				.forEach((track) => peerConnection.current.addTrack(track, stream));
+
+			peerConnection.current.ontrack = (event) => {
+				event.streams[0].getTracks().forEach((track) => {
+					console.log("Add a track to the remoteStream:", track);
+					remoteStream.current.addTrack(track);
+					// remoteVideoRef.current.addTrack(track);
+				});
+			};
+
+			remoteVideoRef.current.srcObject = remoteStream.current;
 		} catch (error) {
 			console.error("Error accessing media devices:", error);
 		}
@@ -77,6 +78,16 @@ const VideoCall = () => {
 					});
 			}
 		};
+
+		peerConnection.current.ontrack = (event) => {
+			event.streams[0].getTracks().forEach((track) => {
+				console.log("Add a track to the remoteStream:", track);
+				remoteStream.current.addTrack(track);
+				// remoteVideoRef.current.addTrack(track);
+			});
+		};
+
+		remoteVideoRef.current.srcObject = remoteStream.current;
 
 		onSnapshot(doc(db, "calls", newCallId), (snapshot) => {
 			const data = snapshot.data();
@@ -122,18 +133,6 @@ const VideoCall = () => {
 
 		// setDoc(collection(db, "calls", newCallId), { offer });
 	};
-	useEffect(() => {
-		// setupConnection();
-		onSnapshot(collection(db, "calls"), (snapshot) => {
-			snapshot.docChanges().forEach((change) => {
-				const data = change.doc.data();
-				console.log(data);
-				if (change.type === "added") {
-					// setupConnection(change.doc.id);
-				}
-			});
-		});
-	}, []);
 
 	const joinCall = async () => {
 		const callDoc = await getDoc(doc(db, "calls", callId));
@@ -173,6 +172,7 @@ const VideoCall = () => {
 					}
 				},
 			);
+
 			// setupConnection(callId);
 		}
 	};
