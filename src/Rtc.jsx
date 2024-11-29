@@ -1,4 +1,11 @@
+import "./Rtc.css";
 import React, { useRef, useEffect, useState } from "react";
+import {
+	BiCamera,
+	BiCameraOff,
+	BiMicrophone,
+	BiMicrophoneOff,
+} from "react-icons/bi";
 import { db } from "./lib/firebase";
 import {
 	doc,
@@ -26,19 +33,6 @@ const configuration = {
 	],
 	// iceCandidatePoolSize: 10,
 };
-
-// const configuration = {
-// 	iceServers: {
-// 		urls: [
-// 			"stun:stun.cloudflare.com:3478",
-// 			"turn:turn.cloudflare.com:3478?transport=udp",
-// 			"turn:turn.cloudflare.com:3478?transport=tcp",
-// 			"turns:turn.cloudflare.com:5349?transport=tcp",
-// 		],
-// 		username: "xxxx",
-// 		credential: "yyyy",
-// 	},
-// };
 
 const VideoCall = () => {
 	const localVideoRef = useRef(null);
@@ -184,18 +178,6 @@ const VideoCall = () => {
 						console.error("Error adding candidate: ", error);
 					}
 				}
-
-				// if (event.candidate) {
-				// 	setDoc(doc(db, "calls", callId, "candidates", "remote"), {
-				// 		remoteCandidate: event.candidate.toJSON(),
-				// 	})
-				// 		.then(() => {
-				// 			console.log("Candidate added successfully in joinCall");
-				// 		})
-				// 		.catch((error) => {
-				// 			console.error("Error adding candidate: ", error);
-				// 		});
-				// }
 			};
 			console.log(callDoc.data());
 			const offer = callDoc.data().offer;
@@ -231,6 +213,33 @@ const VideoCall = () => {
 			// setupConnection(callId);
 		}
 	};
+	const [isCameraOn, setIsCameraOn] = useState(true);
+	const [isAudioOn, setIsAudioOn] = useState(true);
+	const toggleCamera = () => {
+		if (localVideoRef.current && localVideoRef.current.srcObject) {
+			const stream = localVideoRef.current.srcObject;
+			const videoTrack = stream
+				.getTracks()
+				.find((track) => track.kind === "video");
+			if (videoTrack) {
+				videoTrack.enabled = !videoTrack.enabled;
+				setIsCameraOn(videoTrack.enabled);
+			}
+		}
+	};
+	const toggleMic = () => {
+		if (localVideoRef.current && localVideoRef.current.srcObject) {
+			const stream = localVideoRef.current.srcObject;
+			const audioTrack = stream
+				.getTracks()
+				.find((track) => track.kind === "audio");
+			if (audioTrack) {
+				audioTrack.enabled = !audioTrack.enabled;
+				setIsAudioOn(audioTrack.enabled);
+			}
+		}
+	};
+
 	return (
 		<div
 			style={{
@@ -242,20 +251,42 @@ const VideoCall = () => {
 		>
 			<h2>Video Call</h2>
 			{generatedCallId && <p>Room ID: {generatedCallId}</p>}
-			<input
-				type="text"
-				placeholder="Enter Call ID"
-				value={callId}
-				onChange={(e) => setCallId(e.target.value)}
-			/>
-			<div>
-				<button onClick={createOffer}>Create Call</button>
+
+			<div className="control">
+				<input
+					type="text"
+					placeholder="Enter Call ID"
+					value={callId}
+					onChange={(e) => setCallId(e.target.value)}
+				/>
 				<button onClick={joinCall}>Join Call</button>
-				{/* <button onClick={connect}>Connect</button> */}
 			</div>
+			<button onClick={createOffer}>Create Call</button>
 			<div className="videos">
-				<video width={"45%"} ref={localVideoRef} autoPlay playsInline muted />
-				<video width={"45%"} ref={remoteVideoRef} autoPlay playsInline />
+				<video
+					className="video"
+					ref={localVideoRef}
+					autoPlay
+					playsInline
+					muted
+				/>
+				<video className="video" ref={remoteVideoRef} autoPlay playsInline />
+			</div>
+			<div className="control">
+				<button className="btn" onClick={toggleCamera}>
+					{isCameraOn ? (
+						<BiCamera size={25} />
+					) : (
+						<BiCameraOff size={25} color="red" />
+					)}
+				</button>
+				<button className="btn" onClick={toggleMic}>
+					{isAudioOn ? (
+						<BiMicrophone size={25} />
+					) : (
+						<BiMicrophoneOff color="red" size={25} />
+					)}
+				</button>
 			</div>
 		</div>
 	);
