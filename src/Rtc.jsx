@@ -211,6 +211,9 @@ const VideoCall = () => {
 			);
 
 			// setupConnection(callId);
+		} else {
+			console.log("Call ID not found");
+			alert(`Call ID not found ${callId}`);
 		}
 	};
 	const [isCameraOn, setIsCameraOn] = useState(true);
@@ -257,7 +260,7 @@ const VideoCall = () => {
 					type="text"
 					placeholder="Enter Call ID"
 					value={callId}
-					onChange={(e) => setCallId(e.target.value)}
+					onChange={(e) => setCallId(e.target.value.trim())}
 				/>
 				<button onClick={joinCall}>Join Call</button>
 			</div>
