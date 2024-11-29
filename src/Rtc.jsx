@@ -5,6 +5,7 @@ import {
 	setDoc,
 	getDoc,
 	onSnapshot,
+	arrayUnion,
 	collection,
 	addDoc,
 	updateDoc,
@@ -12,12 +13,32 @@ import {
 
 const configuration = {
 	iceServers: [
-		{
-			urls: ["stun:stun1.l.google.com:19302", "stun:stun2.l.google.com:19302"],
-		},
+		{ urls: "stun:stun.l.google.com:19302" },
+		{ urls: "stun:stun.l.google.com:5349" },
+		{ urls: "stun:stun1.l.google.com:3478" },
+		{ urls: "stun:stun1.l.google.com:5349" },
+		{ urls: "stun:stun2.l.google.com:19302" },
+		{ urls: "stun:stun2.l.google.com:5349" },
+		{ urls: "stun:stun3.l.google.com:3478" },
+		{ urls: "stun:stun3.l.google.com:5349" },
+		{ urls: "stun:stun4.l.google.com:19302" },
+		{ urls: "stun:stun4.l.google.com:5349" },
 	],
 	// iceCandidatePoolSize: 10,
 };
+
+// const configuration = {
+// 	iceServers: {
+// 		urls: [
+// 			"stun:stun.cloudflare.com:3478",
+// 			"turn:turn.cloudflare.com:3478?transport=udp",
+// 			"turn:turn.cloudflare.com:3478?transport=tcp",
+// 			"turns:turn.cloudflare.com:5349?transport=tcp",
+// 		],
+// 		username: "xxxx",
+// 		credential: "yyyy",
+// 	},
+// };
 
 const VideoCall = () => {
 	const localVideoRef = useRef(null);
@@ -50,45 +71,40 @@ const VideoCall = () => {
 				.forEach((track) => peerConnection.current.addTrack(track, stream));
 
 			peerConnection.current.ontrack = (event) => {
-				event.streams[0].getTracks().forEach((track) => {
-					console.log("Add a track to the remoteStream:", track);
-					remoteStream.current.addTrack(track);
-					// remoteVideoRef.current.addTrack(track);
-				});
+				remoteVideoRef.current.srcObject = event.streams[0];
 			};
-
-			remoteVideoRef.current.srcObject = remoteStream.current;
 		} catch (error) {
 			console.error("Error accessing media devices:", error);
 		}
 	};
 
-	const remoteStream = useRef(new MediaStream());
 	const setupConnection = (newCallId) => {
 		peerConnection.current.onicecandidate = (event) => {
 			if (event.candidate) {
-				setDoc(doc(db, "calls", newCallId, "candidates", "localCandidate"), {
-					localCandidate: event.candidate.toJSON(),
-				})
-					.then(() => {
-						console.log("Candidate added successfully");
-					})
-					.catch((error) => {
-						console.error("Error adding candidate: ", error);
-					});
+				console.log(event.candidate);
+
+				try {
+					const candidateRef = doc(
+						db,
+						"calls",
+						newCallId,
+						"candidates",
+						"local",
+					);
+
+					setDoc(
+						candidateRef,
+						{
+							candidates: arrayUnion(event.candidate.toJSON()),
+						},
+						{ merge: true },
+					);
+					console.log("Candidate added successfully");
+				} catch (error) {
+					console.error("Error adding candidate: ", error);
+				}
 			}
 		};
-
-		peerConnection.current.ontrack = (event) => {
-			event.streams[0].getTracks().forEach((track) => {
-				console.log("Add a track to the remoteStream:", track);
-				remoteStream.current.addTrack(track);
-				// remoteVideoRef.current.addTrack(track);
-			});
-		};
-
-		remoteVideoRef.current.srcObject = remoteStream.current;
-
 		onSnapshot(doc(db, "calls", newCallId), (snapshot) => {
 			const data = snapshot.data();
 			// console.log(data, "is running");
@@ -106,15 +122,21 @@ const VideoCall = () => {
 		});
 
 		onSnapshot(
-			doc(db, "calls", newCallId, "candidates", "remoteCandidate"),
+			doc(db, "calls", newCallId, "candidates", "remote"),
 
 			(snapshot) => {
 				const data = snapshot.data();
 				console.log(data, "remoteCandidate is running");
-				if (data?.remoteCandidate) {
-					peerConnection.current.addIceCandidate(
-						new RTCIceCandidate(data.remoteCandidate),
-					);
+				if (data) {
+					for (const candidate of data.candidates) {
+						console.log(candidate, "candidate remote");
+						peerConnection.current.addIceCandidate(
+							new RTCIceCandidate(candidate),
+						);
+					}
+					// peerConnection.current.addIceCandidate(
+					// 	new RTCIceCandidate(data.remoteCandidate),
+					// );
 				}
 			},
 		);
@@ -139,16 +161,41 @@ const VideoCall = () => {
 		if (callDoc.exists()) {
 			peerConnection.current.onicecandidate = (event) => {
 				if (event.candidate) {
-					setDoc(doc(db, "calls", callId, "candidates", "remoteCandidate"), {
-						remoteCandidate: event.candidate.toJSON(),
-					})
-						.then(() => {
-							console.log("Candidate added successfully in joinCall");
-						})
-						.catch((error) => {
-							console.error("Error adding candidate: ", error);
-						});
+					console.log(event.candidate);
+
+					try {
+						const candidateRef = doc(
+							db,
+							"calls",
+							callId,
+							"candidates",
+							"remote",
+						);
+
+						setDoc(
+							candidateRef,
+							{
+								candidates: arrayUnion(event.candidate.toJSON()),
+							},
+							{ merge: true },
+						);
+						console.log("Candidate added successfully");
+					} catch (error) {
+						console.error("Error adding candidate: ", error);
+					}
 				}
+
+				// if (event.candidate) {
+				// 	setDoc(doc(db, "calls", callId, "candidates", "remote"), {
+				// 		remoteCandidate: event.candidate.toJSON(),
+				// 	})
+				// 		.then(() => {
+				// 			console.log("Candidate added successfully in joinCall");
+				// 		})
+				// 		.catch((error) => {
+				// 			console.error("Error adding candidate: ", error);
+				// 		});
+				// }
 			};
 			console.log(callDoc.data());
 			const offer = callDoc.data().offer;
@@ -160,15 +207,23 @@ const VideoCall = () => {
 			await updateDoc(doc(db, "calls", callId), { answer });
 
 			onSnapshot(
-				doc(db, "calls", callId, "candidates", "localCandidate"),
+				doc(db, "calls", callId, "candidates", "local"),
 				(snapshot) => {
 					// console.log(snapshot.data());
 					const data = snapshot.data();
-					if (data?.localCandidate) {
-						console.log(data, "localCandidate is running");
-						peerConnection.current.addIceCandidate(
-							new RTCIceCandidate(data.localCandidate),
-						);
+					console.log(data, "localCandidate is running");
+					if (data) {
+						// console.log(data.candidates, "localCandidate is running");
+						for (const candidate of data.candidates) {
+							console.log(candidate, "candidate");
+							peerConnection.current.addIceCandidate(
+								new RTCIceCandidate(candidate),
+							);
+						}
+						// console.log(data, "localCandidate is running");
+						// peerConnection.current.addIceCandidate(
+						// 	new RTCIceCandidate(data.localCandidate),
+						// );
 					}
 				},
 			);
@@ -200,13 +255,7 @@ const VideoCall = () => {
 			</div>
 			<div className="videos">
 				<video width={"45%"} ref={localVideoRef} autoPlay playsInline muted />
-				<video
-					width={"45%"}
-					ref={remoteVideoRef}
-					autoPlay
-					playsInline
-					src="htt"
-				/>
+				<video width={"45%"} ref={remoteVideoRef} autoPlay playsInline />
 			</div>
 		</div>
 	);
